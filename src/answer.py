@@ -1,9 +1,11 @@
 # src/answer.py
 import json, re, sys
 import psycopg
-import ollama
-from pgvector.psycopg import register_vector
+from ollama import Client
 from sentence_transformers import SentenceTransformer
+from pgvector.psycopg import register_vector
+
+ollama_client = Client(timeout=180)
 
 DSN = "postgresql://postgres:contract@localhost:5433/contractqa"   # adapte le port
 MODEL_LLM = "qwen3:4b"
@@ -26,7 +28,7 @@ def rrf(rankings, k=60):
             scores[cid] = scores.get(cid, 0) + 1 / (k + rank)
     return sorted(scores, key=scores.get, reverse=True)
 
-def retrieve(conn, question, doc, k=5):
+def retrieve(conn, question, doc, k=3):
     qv = model.encode("Represent this sentence for searching relevant passages: " + question,
                       normalize_embeddings=True)
     vec = [r[0] for r in conn.execute(
@@ -60,7 +62,7 @@ Return JSON only:
 {"answer": "...", "citations": [1, 3], "found": true}
 If the answer is absent: {"answer": "NOT_FOUND", "citations": [], "found": false}"""
 
-def ask(conn, question, doc, k=5):
+def ask(conn, question, doc, k=3):
     passages = retrieve(conn, question, doc, k)
     if not passages:
         return {"answer": "NOT_FOUND", "citations": [], "found": False}, []
@@ -69,15 +71,17 @@ def ask(conn, question, doc, k=5):
         f"[{i}] (section: {sec})\n{body}"
         for i, (_, sec, _, _, body) in enumerate(passages, start=1))
 
-    resp = ollama.chat(
+    resp = ollama_client.chat(
         model=MODEL_LLM,
         messages=[
             {"role": "system", "content": SYSTEM},
             {"role": "user",
-             "content": f"PASSAGES:\n{context}\n\nQUESTION: {question} /no_think"},
+             "content": f"PASSAGES:\n{context}\n\nQUESTION: {question}"},
         ],
         format="json",
-        options={"temperature": 0, "num_ctx": 8192},
+        think=False,
+        keep_alive="30m",
+        options={"temperature": 0, "num_ctx": 4096, "num_predict": 200},
     )
     raw = resp["message"]["content"].strip()
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
