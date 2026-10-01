@@ -6,6 +6,13 @@ SECTION_RE = re.compile(
     re.MULTILINE,
 )
 HEADING_RE = re.compile(r"^[ \t]*(?P<title>[A-Z][A-Z \-&',\.]{4,70})[ \t]*$", re.MULTILINE)
+INLINE_RE = re.compile(
+    r"(?:\s{2,}|^)"
+    r"(?P<num>\d{1,2}(?:\.\d{1,2})?)\.\s+"
+    r"(?P<title>[A-Z][A-Za-z][A-Za-z ,;/&'\-]{3,70}?)"
+    r"(?=\.\s{2,}|\s{2,}|$)",
+    re.MULTILINE,
+)
 PAGE_RE = re.compile(r"Page\s*-\s*\d+\s*-")
 
 MAX_CHARS = 1800      
@@ -19,18 +26,41 @@ def normalize(s: str) -> str:
 
 def find_boundaries(text: str):
     """Positions where a new section starts, with its label."""
+
     marks = []
+
+    # Existing line-based numbered sections
     for m in SECTION_RE.finditer(text):
-        marks.append((m.start(), f"{m.group('num')} {m.group('title').strip()}"))
+        marks.append(
+            (m.start(), f"{m.group('num')} {m.group('title').strip()}")
+        )
+
+    # Existing uppercase headings
     for m in HEADING_RE.finditer(text):
-        marks.append((m.start(), m.group("title").strip()))
+        marks.append(
+            (m.start(), m.group("title").strip())
+        )
+
+    # Fallback for headings flattened by PDF extraction.
+    # Example:
+    # "... agree as follows:   1. DEFINITIONS.   All capitalized terms..."
+    for m in INLINE_RE.finditer(text):
+        marks.append(
+            (
+                m.start(),
+                f"{m.group('num')} {m.group('title').strip()}",
+            )
+        )
+
     marks.sort()
-    # drop duplicates at the same position
+
     out, seen = [], set()
+
     for pos, label in marks:
         if pos not in seen:
             seen.add(pos)
             out.append((pos, label))
+
     return out
 
 def split_long(start: int, end: int, text: str):
