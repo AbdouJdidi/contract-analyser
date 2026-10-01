@@ -15,13 +15,16 @@ pos = neg = 0
 answered_pos = refused_neg = 0
 grounded = retrievable = 0
 cited_ok = 0
+errors=0
 t0 = time.time()
 
 with psycopg.connect(DSN) as conn:
     register_vector(conn)
     for i, c in enumerate(cases, 1):
-        result, passages = ask(conn, c["question"], c["doc"], k=5)
+        result, passages = ask(conn, c["question"], c["doc"], k=10)
         found = result.get("found") is True
+        if result.get("found") is None:
+            errors += 1
 
         if c["expected"] == "FOUND":
             pos += 1
@@ -54,3 +57,4 @@ print(f"taux de réponse sur positifs             : {answered_pos/pos:.1%}")
 print(f"  dont la clause était bien récupérée    : {grounded/max(answered_pos,1):.1%}")
 print(f"  dont la citation pointe la bonne clause: {cited_ok/max(answered_pos,1):.1%}")
 print(f"taux de refus correct sur négatifs       : {refused_neg/neg:.1%}")
+print(f"erreurs modèle : {errors}/{len(cases)}")
